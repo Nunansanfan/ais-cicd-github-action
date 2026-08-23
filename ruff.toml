@@ -1,0 +1,13 @@
+# Databricks notebooks are not ordinary Python modules. The runtime injects
+# `spark` and `dbutils` as globals, and the widget declarations must run
+# before the imports that depend on them. Both are legitimate here and
+# nowhere else, so the exemption is scoped to the notebook sources.
+
+line-length = 100
+builtins = ["spark", "dbutils", "display"]
+
+[lint]
+select = ["E", "F", "W"]
+
+[lint.per-file-ignores]
+"src/*.py" = ["E402"]
