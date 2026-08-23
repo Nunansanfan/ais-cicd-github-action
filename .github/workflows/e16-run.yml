@@ -1,0 +1,57 @@
+# E16 — the whole thing: authenticate, import a notebook, run it, and fail
+# the job if what came back is wrong.
+name: E16 Build the RFM table
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  WORKSPACE_DIR: /Shared/m6
+
+jobs:
+  build_rfm:
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Import the notebook and run it
+        run: |
+          # A raw username cannot be a table name: Unity Catalog forbids
+          # periods, and yours has two.
+          U=$(databricks current-user me -o json | jq -r .userName)
+          S=$(printf '%s' "${U%%@*}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_')
+          echo "writing ctl_training_dev.m6.customer_rfm_$S"
+
+          databricks workspace mkdirs "$WORKSPACE_DIR"
+          databricks workspace import "$WORKSPACE_DIR/build_rfm" \
+            --file src/build_rfm.py \
+            --format SOURCE --language PYTHON --overwrite
+
+          databricks jobs submit -o json --json "{
+            \"run_name\": \"m6-rfm-${{ github.run_id }}\",
+            \"tasks\": [{
+              \"task_key\": \"rfm\",
+              \"existing_cluster_id\": \"${{ vars.TRAINING_CLUSTER_ID }}\",
+              \"notebook_task\": {
+                \"notebook_path\": \"$WORKSPACE_DIR/build_rfm\",
+                \"base_parameters\": {\"table_suffix\": \"$S\"}
+              }}]}" > run.json
+
+          jq -r '.run_page_url' run.json
+
+      - name: Assert on what the notebook returned
+        run: |
+          TASK=$(jq -r '.tasks[0].run_id' run.json)
+          R=$(databricks jobs get-run-output "$TASK" -o json | jq -r '.notebook_output.result')
+          echo "$R"
+          echo "$R" | jq -e '.rows > 0'
+          echo "$R" | jq -e '.segments | length == 5'
