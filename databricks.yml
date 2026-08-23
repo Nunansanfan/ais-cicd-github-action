@@ -1,0 +1,85 @@
+# m5demo — the churn scoring bundle with its tests, the end state of Module 5.
+#
+# The tests are part of the bundle, not a folder beside it. The churn package
+# and the task notebooks live under src/; the suite lives under tests/ with
+# pytest.ini at the root. Nothing is excluded here, so `databricks bundle
+# deploy` uploads src/, tests/ and pytest.ini together, and the deployed suite
+# can be run on the cluster by the run_tests job (resources/tests.job.yml).
+#
+# Three places the suite meets the bundle:
+#
+#   1. before deploy   pytest -m "not spark" -q && databricks bundle deploy
+#                      the fast local gate: nothing broken reaches the workspace
+#   2. after deploy    databricks bundle run run_tests -t dev
+#                      the deployed suite, on the runtime that runs the job
+#   3. inside the job  data_checks and model_checks tasks (scoring.job.yml)
+#                      the same check functions, applied to the real data
+#
+# The staging target excludes tests/ from the upload: the suite gates the
+# promotion into production, it is not a production workload. A target may add
+# to sync.exclude but cannot clear it, so the exclusion belongs in the target
+# that wants it and never in this base block.
+#
+# The corrupt variable selects a planted data fault for one run, so the
+# in-job checks can be watched failing:
+#
+#   databricks bundle run scoring                          # clean: four tasks succeed
+#   databricks bundle run scoring --var corrupt=null_ids   # data_checks fails
+#   databricks bundle run scoring --var corrupt=drift      # model_checks fails
+#
+# cluster_id is pinned to the training workspace's one all-purpose cluster,
+# the same pattern and the same trade-off as m4demo: the id is
+# workspace-specific, so this bundle cannot be promoted as it stands, and a
+# permission outranks that preference.
+#
+# Validated with Databricks CLI v1.13.0 for both targets.
+
+bundle:
+  name: m5demo
+
+include:
+  - resources/*.yml
+
+variables:
+
+  catalog:
+    description: The catalog publish reports as its destination
+    default: main
+
+  schema:
+    description: The schema publish reports as its destination
+    default: default
+
+  cluster_id:
+    description: Id of the existing all-purpose cluster every task runs on
+    default: 0318-031919-b3fa4xtr
+
+  corrupt:
+    description: "Planted data fault: none, null_ids or drift"
+    default: none
+
+targets:
+
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: main
+      schema: ${workspace.current_user.short_name}
+
+  staging:
+    mode: production
+    # The suite deploys to dev and not to staging. sync.exclude is additive
+    # per target: what is listed here is removed from this target's upload
+    # only, and a target can never clear an exclusion set at the base.
+    sync:
+      exclude:
+        - tests
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: main
+      schema: staging
+    permissions:
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE

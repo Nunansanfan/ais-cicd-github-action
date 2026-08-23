@@ -1,0 +1,64 @@
+# The churn scoring job, with its checks declared as tasks.
+#
+# The graph is a chain, and the order is the point (Module 5, Part E):
+#
+#   data_checks ──▶ score ──▶ model_checks ──▶ publish
+#
+# data_checks validates the input before anything is computed; model_checks
+# validates the scored output before publish runs. Both use the default
+# run_if of ALL_SUCCESS, so a violation in either checks task fails that
+# task and leaves everything downstream UPSTREAM_FAILED. The run history
+# then shows which gate the run failed at.
+#
+# Every task runs on the one existing all-purpose cluster, claimed through
+# the cluster_id variable — the same pattern as m4demo, because this
+# credential may not create job clusters (see COMPUTE.md in m4demo).
+#
+# src_root tells each notebook where the churn package was deployed;
+# ${workspace.file_path} resolves to the bundle's files root for the
+# selected target, so the same declaration is correct in every target.
+
+resources:
+  jobs:
+    scoring:
+      name: churn_scoring
+
+      tasks:
+        - task_key: data_checks
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: ../src/data_checks.py
+            base_parameters:
+              src_root: ${workspace.file_path}/src
+              corrupt: ${var.corrupt}
+
+        - task_key: score
+          depends_on:
+            - task_key: data_checks
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: ../src/score.py
+            base_parameters:
+              src_root: ${workspace.file_path}/src
+              corrupt: ${var.corrupt}
+
+        - task_key: model_checks
+          depends_on:
+            - task_key: score
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: ../src/model_checks.py
+            base_parameters:
+              src_root: ${workspace.file_path}/src
+              corrupt: ${var.corrupt}
+
+        - task_key: publish
+          depends_on:
+            - task_key: model_checks
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: ../src/publish.py
+            base_parameters:
+              src_root: ${workspace.file_path}/src
+              catalog: ${var.catalog}
+              schema: ${var.schema}

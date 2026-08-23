@@ -1,0 +1,13 @@
+# Development and test dependencies for the m5demo bundle. The pins are
+# load-bearing — established by running the suite (see verified-facts-m5.md):
+#
+#   - pyspark 3.5.x matches the Spark line in Databricks Runtime 16.4 LTS,
+#     the runtime this course pins, and fails to import against numpy 2.x.
+#   - pyspark.testing (assertDataFrameEqual) imports pandas and pyarrow at
+#     collection time, so both are required even for pytest -m "not spark".
+#   - a local SparkSession additionally needs Java 17 or later on PATH.
+pytest==8.2.0
+pyspark==3.5.4
+pandas==2.2.3
+pyarrow==17.0.0
+numpy==1.26.4

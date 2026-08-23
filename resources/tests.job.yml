@@ -1,0 +1,42 @@
+# run_tests — the test suite as a bundle resource.
+#
+# This is what "integrating the tests into the bundle" means concretely. The
+# tests/ folder is part of the bundle's source tree, so `databricks bundle
+# deploy` uploads it alongside src/ and pytest.ini; this job then runs that
+# uploaded suite on the cluster:
+#
+#   databricks bundle deploy -t dev
+#   databricks bundle run run_tests -t dev     # SUCCESS only if 58 tests pass
+#
+# Two details are worth reading closely.
+#
+# 1. The job is declared under `targets.dev`, not at the top level like
+#    scoring.job.yml. A target block may ADD resources, so run_tests exists in
+#    dev and does not exist at all in staging — `bundle validate -t staging`
+#    lists one job, `-t dev` lists two. Production has no test job to run,
+#    which is the intent: the suite gates the promotion, it is not a
+#    production workload.
+#
+# 2. notebook_path is relative to THIS FILE, which is why ../src/run_tests.py
+#    is correct here. The same target block written inside databricks.yml
+#    needs ./src/run_tests.py, because relative paths resolve against the file
+#    that declares them, not against the bundle root. Getting this wrong is a
+#    validate-time error: "path ... is not contained in sync root path".
+#
+# bundle_root passes ${workspace.file_path} — the deployed files root for the
+# selected target — so the notebook knows where the suite it must run landed.
+
+targets:
+  dev:
+    resources:
+      jobs:
+        run_tests:
+          name: churn_run_tests
+
+          tasks:
+            - task_key: pytest
+              existing_cluster_id: ${var.cluster_id}
+              notebook_task:
+                notebook_path: ../src/run_tests.py
+                base_parameters:
+                  bundle_root: ${workspace.file_path}
