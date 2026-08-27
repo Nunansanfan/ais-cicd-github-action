@@ -5,6 +5,7 @@
 # output is validated by model_checks before publish runs. The functions are
 # the same ones the test suite exercises locally.
 
+# comment for testing e4-filtering
 # COMMAND ----------
 
 dbutils.widgets.text("src_root", "")
